@@ -1,0 +1,105 @@
+jinlee @pangwei:
+1) all of them are already defined in species files for Kundaje lab and SCG3/4. but if you are working out of those clusters, yes you need to define all of them. @dskim: can you update README about what those parameters are and how-to-get those files.
+2) you can get ATAQC report only when you start the pipeline with fastqs (not bams).
+3), 4)  `-subsample`: subsamples tagaligns and these subsampled tagnaligns will be used for all steps downstream (peak calling, IDR), `-nreads` a temporary tagliagn will be generated for cross-corr. analysis and not be used for steps downsteam.
+5) the latest pipeline has disabling flags `-no_idr` and `-no_ataqc` instead of enabling ones. `-make_pseudoreps` has also changed to disabling flag `-true_rep` (which means no pseudoreps).
+6) blacklist is also in the Kundaje/SCG3,4 species file. You don't need to define it. Take a look at `$pipeline_dir/species/*.conf` (edited)
+[5:21 PM] 
+pangwei @jinlee: 1) great, i’m working out of mitra, so i’ll just write `-species hg19` and be done with it?
+2) hmm, ok. maybe make this explicit in the docs?
+3-4) just to check, this behavior was different in older versions of the pipeline, right? like, -nreads actually affected peak calling? or have i been using -nreads wrongly?
+6) great, so as in (1) i will just leave it out. (edited)
+[5:22 PM] 
+also for 2), if i pass in two fastqs (biological replicates), will i get 1 or 2 ATAQC reports?
+[5:24 PM] 
+jinlee @pangwei: 1) yes, 2) if you don't start with fastqs, pipeline shows a warning and disables ataqc (activate `-no_ataqc` automatically. 3) no even in the old version `-nreads` does not affect peak calling, it's only for cross-corr.  2) you will get a separate ataqc report for each replicate. (edited)
+[5:29 PM] 
+pangwei 3) are you sure? `-subsample` used to be a boolean flag right? in jan 14 in our direct messages you said:
+```You can pull the pipeline repo now and test atac.bds with IDR. Add `-idr` for IDR,  Add `-make_pseudoreps` for IDR on true and psedu replicates. For subsampling, use  `-subsample` and `-nreads [NO_LINES_TO_SUBSAMPLE_BEDPE]````
+
+[5:29 PM] 
+so my previous commands used to look something like `-subsample -nreads 17500000 `
+[5:31 PM] 
+@jinlee: and 1) ok, thanks!, 2) separate ataqc reports are great, thanks. documentation: i meant documentation on github, not the actual pipeline code.
+[5:34 PM] 
+jinlee @pangwei: 3) looking into it, 2) will update README on git repo in the next commit.
+[5:34 PM] 
+pangwei thank you :slightly_smiling_face:
+[5:34 PM] 
+i’m asking after (3) just to make sure we didn’t do the wrong thing for our (already accepted) work, which would be not so good
+[5:35 PM] 
+but i assume in the current version of the pipeline i should write `-subsample 17500000` instead and not mention `nreads`.
+[5:46 PM] 
+jinlee @pangwei: yes, pipeline will randomly pick up 17500000 lines from tagaligns (or bedpe) and it will affect peak calling and IDR downstream. I checked pipeline codes at Jan 14th. Cross corr. analsysis was not included in the pipeline at that moment. And `-subsample -nreads [NREADS]` in the old version is equivalent to `-subsample [NREADS]` in the current version.
+[5:46 PM] 
+pangwei phew
+[5:46 PM] 
+thanks
+[5:46 PM] 
+will subsampling affect ATAQC?
+[5:47 PM] 
+jinlee I don't think that ATAQC takes into account subsampling, we need to discuss it with @dskim.
+[5:47 PM] 
+pangwei also if starting from PE fastq, does `-subsample N` mean N/2 pairs of reads or N pairs of reads?
+[5:49 PM] 
+jinlee N/2 pairs of reads (edited)
+[5:50 PM] 
+`zcat $bedpe | grep -v "chrM" | shuf -n $subsample | gzip -c > $subsampled_bedpe`
+[5:50 PM] 
+pangwei doesn’t that mean N pairs of reads?
+[5:51 PM] 
+one line in a BEDPE file has 2 reads right?
+[5:51 PM] 
+jinlee oops, sorry. it's N pairs.
+[5:52 PM] 
+pangwei cool. thank you very much!!
+[5:52 PM] 
+@dskim just one question left whenever you see this: does ATAQC take subsampling into account?
+[5:54 PM] 
+jinlee
+```run_ataqc.py \
+    --workdir $o_dir \
+    --outdir $o_dir \
+    --outprefix $prefix_basename \
+    --genome $species \
+    --ref $ref_fa \
+    --tss $tss_enrich \
+    --dnase $dnase \
+    --blacklist $blacklist \
+    --prom $prom \
+    --enh $enh \
+    --reg2map $reg2map \
+    --meta $roadmap_meta \
+    --pbc $pbc_log\
+    --fastq1 $fastq1 --fastq2 $fastq2 \
+    --alignedbam $bam \
+    --alignmentlog $align_log \
+    --coordsortbam $srt_bam \
+    --duplog $dup_log \
+    --finalbam $filt_bam \
+    --finalbed $bed \ <---------- subsampled tag
+    --bigwig $bigwig \ <---------- signal on subsampled tag
+    --peaks $peak \ <---------- called peak on subsampled tag
+    ...
+```
+
+[5:55 PM] 
+ATAQC takes inputs like the above.
+[5:56 PM] 
+pangwei hmm. so i guess the answer is yes?
+[5:56 PM] 
+subsampling will affect ATAQC?
+[5:57 PM] 
+jinlee I think so
+[5:57 PM] 
+pangwei ok, thank you!
+[5:57 PM] 
+it seems not unreasonable to run ATAQC on the subsampled stuff, so i’ll give it a shot.
+[6:18 PM] 
+dskim @jinlee: oh the inputs `finalbed`, `bigwig`, `peaks` should not be the subsample files, those should be the original files. Ie, `finalbed` should be the full filtered `tagAlign`. Has that not been true?
+[6:19 PM] 
+@pangwei: depends on the inputs, but ATAQC is intended to run on the non-subsampled outputs, so the QC should be on the real outputs of the pipeline that you might use for other analyses
+[6:22 PM] 
+jinlee @dskim: there are two kinds of subsampling, with `-nreads`, it does not affect jobs downstream and it's only for cross corr. analysis, but with `-subsample` subsampled tagaligns are used for calling peaks and IDR. we are talking about `-subsample` now. (edited)
+[6:24 PM] 
+dskim ok. so then yes, if the subsampled tagAligns are used for peaks and IDR, then those are the only downstream outputs available and so @pangwei you are using results from the subsampling. you’ll just have to keep that in mind when you look at the QC, that pre-peak calling is unsubsampled and post-peakcalling is.
